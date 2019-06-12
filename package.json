@@ -1,0 +1,20 @@
+{
+  "name": "octonums",
+  "version": "0.0.1",
+  "description": "Personal commit statistics in public Github",
+  "main": "main.js",
+  "dependencies": {
+    "fs-extra": "^8.0.1",
+    "minimist": "^1.2.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "github",
+    "stats"
+  ],
+  "author": "Juan Sierra",
+  "license": "Apache-2.0"
+}
