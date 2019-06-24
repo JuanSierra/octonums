@@ -1,8 +1,8 @@
 const https = require('https');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
-const chunkSize = 5;
 const fs = require('fs-extra');
+const moment = require('moment');
 
 const defaults = {
   alias: {
@@ -10,6 +10,7 @@ const defaults = {
 	h: 'help'
   }
 };
+
 const help = `
 Usage: octonums [OPTIONS]
 Example:
@@ -40,76 +41,148 @@ if (argv.help) {
     return;
 }
 
-async function lsExample(gitUrl) {
-	let gitFolder = gitUrl.split('/')
-	gitFolder = gitFolder[gitFolder.length-1];
+function GetStdev(array){
+	let sum =  f.reduce((total, num) => total + num );
+	let mean = sum / array.length;
+	let squares = array.map( num, Math.pow(num - mean, 2));
+	let variance =  squares.reduce((total, num) => total + num );
 	
-	fs.removeSync(gitFolder);
-	
-	const { stdout, stderr } = await exec('git clone --bare ' + gitUrl);
-	var result = await exec('git log --shortstat --author="Juan" | grep -E "fil(e|es) changed"', {cwd: './' + gitFolder},
-		 function(err, stdout, stderr){
-			var out = `Files changed  ${countFiles(stdout)}!
-Lines added   ${countInserted(stdout)}!
-Lines deleted ${countDeleted(stdout)}!
-Total lines ${countInserted(stdout) - countDeleted(stdout)}!
-Add./Del. ratio (1:${countDeleted(stdout) / countInserted(stdout)})!`;
-			console.log('--- ' + gitFolder + ' processed ---');
-			console.log(out);
-		 }
-	);
+	return Math.sqrt(variance);
 }
 
-async function calculateQuarter(gitUrl, filter) {
-	let gitFolder = gitUrl.split('/')
+async function calculateChunk(gitUrl, filter, key) {
+	let gitFolder = gitUrl.split('/');
 	gitFolder = gitFolder[gitFolder.length-1];
 	
-	fs.removeSync(gitFolder);
-	
-	const { stdout, stderr } = await exec('git clone --bare ' + gitUrl);
-	var result = await exec('git log --shortstat --author="Juan" ' + filter + ' | grep -E "fil(e|es) changed"', {cwd: './' + gitFolder},
-		 function(err, stdout, stderr){
-			var out = `Files changed  ${countFiles(stdout)}!
-Lines added   ${countInserted(stdout)}!
-Lines deleted ${countDeleted(stdout)}!
-Total lines ${countInserted(stdout) - countDeleted(stdout)}!
-Add./Del. ratio (1:${countDeleted(stdout) / countInserted(stdout)})!`;
-			console.log('--- '+gitFolder + ' processed ---')
-			console.log(out);
-		 }
-	);
+	// [...Array(13).keys()]
+	return new Promise((resolve, reject) => {
+		exec(
+			'git log --shortstat --author="Juan" '+filter+' | grep -E "fil(e|es) changed" || print "NONE"', 
+			{cwd: 'repos/' + gitFolder},
+			function(err, stdout, stderr){
+				if(err){
+					console.log(err)
+				}
+				
+				var out = { 
+					"id" : key,
+					"repo" : gitFolder,
+					"files" : countFiles(stdout),
+					"linesAdded" : countInserted(stdout),
+					"linesDeleted" : countDeleted(stdout),
+					"lines" : countInserted(stdout) - countDeleted(stdout)
+				}
+
+				//Add./Del. ratio (1:${countDeleted(stdout) / countInserted(stdout)})!
+
+				//console.log('--- ' + gitFolder + ' processed ---');
+				//console.log(out);
+				resolve(out);
+			}
+		);
+	});
 }
 
-var data = fs.readFileSync('repos.json');
-let repos = JSON.parse(data);
-let gits = repos.map(r => r.git_url);
+async function run(){
+	if (!fs.existsSync('repos')){
+		fs.mkdirSync('repos');
+	}
 
-gits.forEach(function(git, i){
-	//lsExample(git);
-	calculateQuarter(git, '--since="3 months ago" --before=today');
-});
+	var data = fs.readFileSync('repos.json');
+	let repos = JSON.parse(data);
+	let gits = repos.map(r => r.git_url);
+
+	// 1. Download repos
+	for await (const git of gits) {
+		console.log('Download ' + git);
+		let gitFolder = git.split('/');
+		gitFolder = gitFolder[gitFolder.length-1];
+
+		fs.removeSync('repos/' + gitFolder);
+		const { stdout, stderr } = await exec('git clone --bare ' + git + ' repos/' + gitFolder);
+	}
+	
+	// 2. Get stats
+	let stats = [];
+	let monthStats = [];
+	let yearStats = [];
+	let calculation;
+	
+	// Config
+	let months = 13;
+	let years = 5;
+	
+	// Last year by months
+	while (months-->1) {
+		stats = [];
+		
+		for await (const git of gits) {
+			let before = (months-1 == 0) ? 'today"' : (months-1) + ' months ago"';
+			let filter = '--since="'+months+' months ago" --before="' + before;
+			let key = moment().subtract(months, 'months').format('MMM');
+			calculation = await calculateChunk(git, filter, key);
+
+			stats.push(calculation);
+		}
+		monthStats.push(stats);
+	}
+	
+	// Last year by quarters ...
+
+	// by years
+	while (years-->1) {
+		stats = [];
+		
+		for await (const git of gits) {
+			let before = (years-1 == 0) ? 'today"' : (years-1) + ' years ago"';
+			let filter = '--since="'+years+' years ago" --before="' + before;
+			let key = moment().subtract(years, 'years').format('YYYY') + (years-1==0?'*':'');
+			calculation = await calculateChunk(git, filter, key);
+
+			stats.push(calculation);
+		}
+		
+		yearStats.push(stats);
+	}
+	
+	// 3. Print tables
+	let mTable = [];
+	mTable.push();
+	for (const mStats of monthStats) {
+		
+	}
+	
+	for (const yStats of yearStats) {
+		
+	}
+	
+	//console.log(stats);	
+	fs.writeJsonSync('./salida.json', stats);
+}
+
+run();
 
 /*
-https.get('https://api.github.com/users/jdjuan/repos', (resp) => {
-  let data = '';
+Total LoC
+Files
+Repositories 
 
-  // A chunk of data has been recieved.
-  resp.on('data', (chunk) => {
-    data += chunk;
-  });
+Last 5 Years
 
-  // The whole response has been received. Print out the result.
-  resp.on('end', () => {
-	let repos = JSON.parse(data);
-    let gits = repos.map(r => r.git_url);
-	
-	gits.forEach(function(git, i){
-		lsExample(git);
-	});
-  });
+      2015  2016   2017   2018   2019* 
+ --- ----- ------ ------ ------ ------
+  #    321  454    5546   6545    64  
+  b    ↑↑    ↓      ↑      ↑↑     ↑↑  
+  
+Last Year
+   #   Q1    Q2     Q3     Q4  
+ --- ----- ------ ------ ------
+  a    ↑↑    ↓      ↑      ↑↑  
 
-}).on("error", (err) => {
-  console.log("Error: " + err.message);
-});
+... by month
+
+  #   Jan   Feb    Mar    Apr    Jan   Feb    Mar    Apr    Jan   Feb    Mar    Apr    Jan   Feb    Mar    Apr  
+ --- ----- ------ ------ ------ ----- ------ ------ ------ ----- ------ ------ ------ ----- ------ ------ ------
+  a    ↑↑    ·      ↑      ↓      ↑↑    ·      ↑      ↑↑     ↑↑    ·      ↑      ↑↑     ↑↑    ·      ↑      ↑↑       
 
 */
