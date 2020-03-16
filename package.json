@@ -5,7 +5,7 @@
   "main": "main.js",
   "dependencies": {
     "fs-extra": "^8.0.1",
-    "minimist": "^1.2.0",
+    "minimist": "^1.2.2",
     "moment": "^2.24.0"
   },
   "devDependencies": {},
